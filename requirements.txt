@@ -1,0 +1,11 @@
+pydantic>=2.0.0
+psutil>=5.9.0
+openai>=1.0.0
+pyyaml>=6.0
+
+# Optional dependencies for testing utilities
+# Uncomment to enable Google API connectivity testing:
+# google-api-python-client>=2.0.0
+# google-auth>=2.0.0
+# google-auth-oauthlib>=0.5.0
+# google-auth-httplib2>=0.1.0

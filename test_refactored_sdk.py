@@ -21,7 +21,7 @@ from simulation_sdk import (
     success_template=SimulationResponse(
         success=True,
         response_data={
-            "presentationId": "sim_pres_id_${timestamp}",
+            "presentationId": "sim_pres_id_123",
             "status": "created",
             "title": "$title",
             "slides": "$num_slides"
@@ -139,6 +139,12 @@ def test_basic_functionality():
     result = email_writer_agent("test@example.com", "Test Email")
     print(f"Agent result: {result}")
     
+    try:
+        merge_performance_files()
+        print("Performance files merged successfully")
+    except Exception as e:
+        print(f"Performance merge info: {e}")    
+    
     result = email_writer_agent_tool("test@example.com", "Test Email")
     print(f"Agent tool result: {result}")
 
@@ -153,11 +159,7 @@ def test_basic_functionality():
     print("\n6. PERFORMANCE MANAGEMENT")
     print("-" * 40)
     
-    try:
-        merge_performance_files()
-        print("Performance files merged successfully")
-    except Exception as e:
-        print(f"Performance merge info: {e}")
+
     
     print("\n" + "=" * 50)
     print("All tests completed!")

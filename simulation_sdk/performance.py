@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from .models import AgentAsToolSummary, TaskMetrics
+from .models import AgentAsToolSummary, TaskMetrics, WorkflowMetrics
 
 
 class PerformanceManager:
@@ -176,4 +176,35 @@ class PerformanceManager:
             
         except Exception as e:
             self.logger.error(f"Failed to save task history for {agent_name}: {e}")
+            raise
+    
+    def save_workflow_metrics(self, workflow_metrics: WorkflowMetrics) -> Path:
+        """
+        Save workflow metrics to history storage.
+        
+        Args:
+            workflow_metrics: WorkflowMetrics instance to save
+            
+        Returns:
+            Path to the saved file
+        """
+        try:
+            # Create directory structure
+            workflow_history_dir = self.history_dir / "workflows" / workflow_metrics.workflow_id
+            workflow_history_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create filename with timestamp
+            timestamp = datetime.now().isoformat().replace(":", "-").replace(".", "-")
+            filename = f"{timestamp}.json"
+            filepath = workflow_history_dir / filename
+            
+            # Save workflow metrics
+            with open(filepath, 'w') as f:
+                json.dump(workflow_metrics.model_dump(), f, indent=2, default=str)
+            
+            self.logger.info(f"Saved workflow metrics for {workflow_metrics.workflow_name} to {filepath}")
+            return filepath
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save workflow metrics: {e}")
             raise

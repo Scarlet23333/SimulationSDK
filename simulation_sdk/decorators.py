@@ -502,6 +502,15 @@ def _save_agent_performance(
     if hasattr(agent_context, 'save_task_metrics'):
         agent_context.save_task_metrics(task_metrics)
     
+    # Save task history using PerformanceManager
+    performance_manager = PerformanceManager()
+    performance_manager.save_task_history(agent_name, task_metrics)
+    
+    # Add task metrics to workflow if one is active
+    context = SimulationContext.get_current()
+    if context and context.workflow_id:
+        context.add_task_metrics(task_metrics)
+    
     # Create agent performance summary
     agent_performance = AgentPerformance(
         tokens=total_tokens,
@@ -525,5 +534,4 @@ def _save_agent_performance(
     )
     
     # Save performance using PerformanceManager
-    performance_manager = PerformanceManager()
     performance_manager.save_temp_performance(agent_name, agent_summary)

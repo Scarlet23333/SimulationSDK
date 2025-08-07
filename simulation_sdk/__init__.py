@@ -23,6 +23,9 @@ from .registry import ToolRegistry
 # Performance management utility
 from .performance import PerformanceManager
 
+# Context and workflow utilities
+from .context import get_current_context
+
 
 def merge_performance_files() -> None:
     """
@@ -32,6 +35,23 @@ def merge_performance_files() -> None:
     """
     manager = PerformanceManager()
     manager.merge_temp_to_latest()
+
+
+def save_workflow_metrics(workflow_metrics, base_path: str = "simulation_data"):
+    """
+    Save workflow metrics to history storage.
+    
+    This is a convenience function that uses PerformanceManager.
+    
+    Args:
+        workflow_metrics: WorkflowMetrics instance to save
+        base_path: Base directory for simulation data
+        
+    Returns:
+        Path to the saved file
+    """
+    manager = PerformanceManager(base_path)
+    return manager.save_workflow_metrics(workflow_metrics)
 
 
 __all__ = [
@@ -48,6 +68,10 @@ __all__ = [
     
     # Registry
     "ToolRegistry",
+    
+    # Context and workflow
+    "get_current_context",
+    "save_workflow_metrics",
     
     # Manual performance management (optional)
     "merge_performance_files",

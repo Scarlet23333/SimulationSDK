@@ -67,7 +67,6 @@ class AgentPerformance(BaseModel):
 class AgentSimulatedResult(BaseModel):
     """Complete simulated result for an agent execution."""
     task_goal: str
-    langraph_execution: Dict[str, Any]  # Node outputs from LangGraph
     tool_calls: List[Dict[str, Any]]  # Tool call history
     final_output: Any  # Must match real agent's response format
     

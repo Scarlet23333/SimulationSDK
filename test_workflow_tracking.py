@@ -62,6 +62,15 @@ def analyze_code(file_path: str) -> dict:
         "suggestions": ["Add more comments", "Refactor long functions"]
     }
 
+@simulation_tool(
+    agent_name="code_analyzer",
+    category=ToolCategory.AGENT_TOOL,
+    delay_ms=200,
+    description="Analyze code file and return insights"
+)
+def analyze_code_tool(file_path: str) -> dict:
+    """Analyze code file and return insights."""
+    return analyze_code(file_path)
 
 @simulation_agent(name="code_improver", delay_ms=800)
 def improve_code(file_path: str, suggestions: list) -> dict:
@@ -79,6 +88,15 @@ def improve_code(file_path: str, suggestions: list) -> dict:
         "status": "success"
     }
 
+@simulation_tool(
+    agent_name="code_improver",
+    category=ToolCategory.AGENT_TOOL,
+    delay_ms=200,
+    description="Improve code based on suggestions"
+)
+def improve_code_tool(file_path: str, suggestions: list) -> dict:
+    """Improve code based on suggestions."""
+    return improve_code(file_path, suggestions)
 
 def test_workflow_tracking():
     """Test the workflow tracking functionality."""
@@ -143,10 +161,10 @@ def test_nested_workflow():
         
         for file_path in file_list:
             # Analyze each file
-            analysis = analyze_code(file_path)
+            analysis = analyze_code_tool(file_path)
             
             # Improve based on analysis
-            improvement = improve_code(file_path, analysis["suggestions"])
+            improvement = improve_code_tool(file_path, analysis["suggestions"])
             
             results.append({
                 "file": file_path,

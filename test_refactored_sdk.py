@@ -85,21 +85,7 @@ def email_writer_agent(recipient: str, subject: str):
 )
 def email_writer_agent_tool(recipient: str, subject: str):
     """Write and send an email."""
-    print(f"Agent: Writing email to {recipient} with subject: {subject}")
-    
-    # Simulate some work
-    time.sleep(0.1)
-    
-    # Use a tool
-    slides = create_google_slides(f"Email attachment for {recipient}", 3)
-    
-    return {
-        "email_id": f"email_{int(time.time())}",
-        "recipient": recipient,
-        "subject": subject,
-        "attachment": slides.get("presentationId"),
-        "status": "sent"
-    }
+    return email_writer_agent(recipient, subject)
 
 def test_basic_functionality():
     """Test basic SDK functionality."""
@@ -135,9 +121,15 @@ def test_basic_functionality():
     # Test 4: Agent execution
     print("\n4. AGENT EXECUTION")
     print("-" * 40)
-    
     result = email_writer_agent("test@example.com", "Test Email")
-    print(f"Agent result: {result}")
+    print(f"Agent result in simulation mode: {result}")
+
+
+    os.environ["SIMULATION_MODE"] = "false"
+    result = email_writer_agent("test@example.com", "Test Email")
+    print(f"Agent result in production mode: {result}")
+    
+    os.environ["SIMULATION_MODE"] = "true"
     
     try:
         merge_performance_files()

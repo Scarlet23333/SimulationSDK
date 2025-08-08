@@ -27,7 +27,7 @@ from .models import (
     SimulationResponse,
 )
 from .registry import ToolRegistry, ResponseTemplateManager
-from .context import SimulationContext
+from .context import SimulationContext, _thread_local
 from .performance import PerformanceManager
 
 
@@ -365,6 +365,9 @@ def simulation_agent(
 
 def _execute_agent_sync(func: Callable, agent_name: str, args: tuple, kwargs: dict) -> Any:
     """Execute a sync agent with performance tracking."""
+    # Check if we're in simulation mode
+    simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
+    
     # Create new SimulationContext for agent execution
     agent_context = SimulationContext()
     agent_context.agent_name = agent_name
@@ -381,34 +384,39 @@ def _execute_agent_sync(func: Callable, agent_name: str, args: tuple, kwargs: di
     try:
         # Set the context as current
         original_context = SimulationContext.get_current()
-        SimulationContext._current = agent_context
+        _thread_local.context = agent_context
         
         # Execute the agent
         result = func(*args, **kwargs)
         
-        # Save performance data
-        _save_agent_performance(
-            agent_name, task_id, task_goal, start_time, 
-            agent_context, result, success=True
-        )
+        # Save performance data only in simulation mode
+        if simulation_mode:
+            _save_agent_performance(
+                agent_name, task_id, task_goal, start_time, 
+                agent_context, result, success=True, original_context=original_context
+            )
         
         return result
         
     except Exception as e:
-        # Save performance data even on failure
-        _save_agent_performance(
-            agent_name, task_id, task_goal, start_time,
-            agent_context, {"error": str(e)}, success=False
-        )
+        # Save performance data even on failure, but only in simulation mode
+        if simulation_mode:
+            _save_agent_performance(
+                agent_name, task_id, task_goal, start_time,
+                agent_context, {"error": str(e)}, success=False, original_context=original_context
+            )
         raise
         
     finally:
         # Restore original context
-        SimulationContext._current = original_context
+        _thread_local.context = original_context
 
 
 async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwargs: dict) -> Any:
     """Execute an async agent with performance tracking."""
+    # Check if we're in simulation mode
+    simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
+    
     # Create new SimulationContext for agent execution
     agent_context = SimulationContext()
     agent_context.agent_name = agent_name
@@ -425,30 +433,32 @@ async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwa
     try:
         # Set the context as current
         original_context = SimulationContext.get_current()
-        SimulationContext._current = agent_context
+        _thread_local.context = agent_context
         
         # Execute the agent
         result = await func(*args, **kwargs)
         
-        # Save performance data
-        _save_agent_performance(
-            agent_name, task_id, task_goal, start_time,
-            agent_context, result, success=True
-        )
+        # Save performance data only in simulation mode
+        if simulation_mode:
+            _save_agent_performance(
+                agent_name, task_id, task_goal, start_time,
+                agent_context, result, success=True
+            )
         
         return result
         
     except Exception as e:
-        # Save performance data even on failure
-        _save_agent_performance(
-            agent_name, task_id, task_goal, start_time,
-            agent_context, {"error": str(e)}, success=False
-        )
+        # Save performance data even on failure, but only in simulation mode
+        if simulation_mode:
+            _save_agent_performance(
+                agent_name, task_id, task_goal, start_time,
+                agent_context, {"error": str(e)}, success=False, original_context=original_context
+            )
         raise
         
     finally:
         # Restore original context
-        SimulationContext._current = original_context
+        _thread_local.context = original_context
 
 
 def _extract_task_goal(args: tuple, kwargs: dict) -> str:
@@ -470,16 +480,15 @@ def _save_agent_performance(
     start_time: float,
     agent_context: SimulationContext,
     result: Any,
-    success: bool
+    success: bool,
+    original_context: Optional[SimulationContext] = None
 ) -> None:
-    """Save agent performance data."""
+    """Save agent performance data (only called when SIMULATION_MODE=true)."""
     # Calculate performance metrics
     duration_ms = int((time.time() - start_time) * 1000)
     
     # Get tool metrics from context
-    tool_metrics = []
-    if hasattr(agent_context, '_tool_metrics'):
-        tool_metrics = agent_context._tool_metrics
+    tool_metrics = agent_context.tool_metrics
     
     # Calculate total tokens
     tool_tokens = sum(tm.tokens for tm in tool_metrics)
@@ -507,9 +516,9 @@ def _save_agent_performance(
     performance_manager.save_task_history(agent_name, task_metrics)
     
     # Add task metrics to workflow if one is active
-    context = SimulationContext.get_current()
-    if context and context.workflow_id:
-        context.add_task_metrics(task_metrics)
+    # Use the original context which may have workflow tracking
+    if original_context and original_context.workflow_id:
+        original_context.add_task_metrics(task_metrics)
     
     # Create agent performance summary
     agent_performance = AgentPerformance(
@@ -521,7 +530,6 @@ def _save_agent_performance(
     # Create simulated result
     simulated_result = AgentSimulatedResult(
         task_goal=task_goal,
-        langraph_execution={},  # Empty for now
         tool_calls=[tm.model_dump() for tm in tool_metrics],
         final_output=result,
     )

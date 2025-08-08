@@ -1,0 +1,289 @@
+"""
+Agent and Workflow Example - SimulationSDK
+
+This example demonstrates the bottom-up agent development approach with workflow tracking.
+Follows the patterns from test_workflow_tracking.py
+"""
+
+import os
+import time
+from simulation_sdk import (
+    simulation_agent,
+    simulation_tool,
+    ToolCategory,
+    SimulationResponse,
+    get_current_context,
+    save_workflow_metrics,
+    merge_performance_files
+)
+
+
+# Step 1: Define tools that agents will use
+@simulation_tool(
+    category=ToolCategory.PRODUCTION_AFFECTING,
+    success_template=SimulationResponse(
+        success=True,
+        response_data={
+            "presentationId": "sim_pres_$timestamp",
+            "title": "$title",
+            "slides": "$num_slides",
+            "url": "https://docs.google.com/presentation/d/sim_pres_$timestamp"
+        }
+    ),
+    failure_template=SimulationResponse(
+        success=False,
+        response_data={},
+        error_code=403,
+        error_message="Insufficient permissions to create presentation"
+    ),
+    delay_ms=2000
+)
+def create_google_slides(title: str, num_slides: int):
+    """Create a Google Slides presentation"""
+    print(f"[PRODUCTION] Creating presentation: {title}")
+    return {
+        "presentationId": f"real_pres_{int(time.time())}",
+        "title": title,
+        "slides": num_slides,
+        "url": f"https://docs.google.com/presentation/d/real_pres_{int(time.time())}"
+    }
+
+
+@simulation_tool(
+    category=ToolCategory.PRODUCTION_AFFECTING,
+    success_template=SimulationResponse(
+        success=True,
+        response_data={
+            "slide_id": "slide_$slide_num",
+            "status": "updated",
+            "content_preview": "$content[:50]..."
+        }
+    ),
+    failure_template=SimulationResponse(
+        success=False,
+        response_data={},
+        error_code=404,
+        error_message="Slide not found"
+    ),
+    delay_ms=500
+)
+def add_slide_content(presentation_id: str, slide_num: int, content: str):
+    """Add content to a specific slide"""
+    print(f"[PRODUCTION] Adding content to slide {slide_num}")
+    return {
+        "slide_id": f"slide_{slide_num}",
+        "status": "updated",
+        "content_preview": content[:50] + "..."
+    }
+
+
+# Step 2: Create atomic agents with @simulation_agent for testing
+@simulation_agent(name="slide_creator", delay_ms=500)
+def slide_creator_agent(topic: str, num_slides: int = 5):
+    """Agent that creates presentation slides on a topic"""
+    print(f"\n=== Slide Creator Agent ===")
+    print(f"Creating {num_slides}-slide presentation on: {topic}")
+    
+    # Create the presentation
+    presentation = create_google_slides(
+        title=f"Presentation: {topic}",
+        num_slides=num_slides
+    )
+    
+    # Add content to each slide
+    for i in range(1, num_slides + 1):
+        slide_content = f"Slide {i}: Key points about {topic}"
+        add_slide_content(
+            presentation_id=presentation["presentationId"],
+            slide_num=i,
+            content=slide_content
+        )
+    
+    # Return result matching production format
+    return {
+        "status": "success",
+        "presentation_id": presentation["presentationId"],
+        "url": presentation["url"],
+        "slides_created": num_slides,
+        "message": f"Created {num_slides}-slide presentation on {topic}"
+    }
+
+
+@simulation_agent(name="research_agent", delay_ms=300)
+def research_agent(topic: str):
+    """Agent that researches a topic"""
+    print(f"\n=== Research Agent ===")
+    print(f"Researching topic: {topic}")
+    
+    # Simulate research work
+    time.sleep(0.1)
+    
+    return {
+        "status": "success",
+        "topic": topic,
+        "key_findings": [
+            f"Finding 1 about {topic}",
+            f"Finding 2 about {topic}",
+            f"Finding 3 about {topic}"
+        ],
+        "summary": f"Comprehensive research on {topic} completed"
+    }
+
+
+# Step 3: Create higher-level agent that coordinates others
+@simulation_agent(name="workshop_organizer", delay_ms=1000)
+def workshop_organizer_agent(workshop_topic: str, audience: str):
+    """Agent that organizes a complete workshop"""
+    print(f"\n=== Workshop Organizer Agent ===")
+    print(f"Organizing workshop on '{workshop_topic}' for {audience}")
+    
+    # First, research the topic
+    research_result = research_agent(workshop_topic)
+    
+    # Then create presentation based on research
+    presentation_result = slide_creator_agent(
+        topic=f"{workshop_topic} for {audience}",
+        num_slides=10
+    )
+    
+    # Compile workshop plan
+    workshop_plan = {
+        "topic": workshop_topic,
+        "audience": audience,
+        "research": research_result["key_findings"],
+        "presentation_id": presentation_result["presentation_id"],
+        "presentation_url": presentation_result["url"],
+        "agenda": [
+            "Welcome and Introduction (10 min)",
+            f"Overview of {workshop_topic} (20 min)",
+            "Deep Dive and Examples (30 min)",
+            "Interactive Exercise (20 min)",
+            "Q&A Session (15 min)",
+            "Wrap-up and Next Steps (5 min)"
+        ]
+    }
+    
+    return {
+        "status": "success",
+        "workshop_plan": workshop_plan,
+        "message": f"Successfully organized workshop on {workshop_topic}"
+    }
+
+
+# Step 4: After testing, create AGENT_TOOL wrappers
+@simulation_tool(
+    category=ToolCategory.AGENT_TOOL,
+    agent_name="slide_creator",
+    delay_range=(400, 600)
+)
+def slide_creator_tool(topic: str, num_slides: int = 5):
+    """Tool wrapper for slide_creator agent"""
+    # In production, this would call the actual agent
+    # In simulation, it loads cached performance
+    return slide_creator_agent(topic, num_slides)
+
+
+@simulation_tool(
+    category=ToolCategory.AGENT_TOOL,
+    agent_name="research_agent",
+    delay_ms=300
+)
+def research_tool(topic: str):
+    """Tool wrapper for research agent"""
+    return research_agent(topic)
+
+
+# Workflow example
+def run_complete_workflow():
+    """Example of tracking a complete workflow"""
+    context = get_current_context()
+    
+    # Start the workflow
+    workflow_id = "workshop_creation_001"
+    workflow_name = "Complete Workshop Creation"
+    context.start_workflow(workflow_id, workflow_name)
+    
+    print(f"\n{'='*50}")
+    print(f"Starting Workflow: {workflow_name}")
+    print(f"{'='*50}")
+    
+    try:
+        # Execute the main agent
+        result = workshop_organizer_agent(
+            workshop_topic="Introduction to Machine Learning",
+            audience="Business Leaders"
+        )
+        
+        # End workflow successfully
+        workflow_metrics = context.end_workflow(success=True, comment_score=9.5)
+        
+        if workflow_metrics:
+            print(f"\n{'='*50}")
+            print("Workflow Completed Successfully!")
+            print(f"{'='*50}")
+            print(f"Workflow ID: {workflow_metrics.workflow_id}")
+            print(f"Total Tasks: {len(workflow_metrics.tasks)}")
+            print(f"Total Duration: {workflow_metrics.total_duration}ms")
+            print(f"Total Tokens: {workflow_metrics.total_tokens}")
+            print(f"Estimated Cost: ${workflow_metrics.total_cost:.4f}")
+            print(f"Quality Score: {workflow_metrics.comment_score}/10")
+            
+            # Save workflow metrics
+            saved_path = save_workflow_metrics(workflow_metrics)
+            print(f"\nMetrics saved to: {saved_path}")
+            
+            # Display task breakdown
+            print(f"\nTask Breakdown:")
+            for task in workflow_metrics.tasks:
+                print(f"  - {task.task_name}: {task.total_duration}ms, {len(task.tool_calls)} tool calls")
+        
+        return result
+        
+    except Exception as e:
+        print(f"\nWorkflow failed: {e}")
+        context.end_workflow(success=False, comment_score=2.0)
+        raise
+
+
+def demonstrate_agent_as_tool():
+    """Show how agents can be used as tools after testing"""
+    print(f"\n\n{'='*50}")
+    print("Agent as Tool Pattern Demonstration")
+    print(f"{'='*50}\n")
+    
+    # First merge any pending performance files
+    merge_performance_files()
+    
+    # Now use the tool wrappers (which load cached performance in simulation)
+    print("Using agent tools (with cached performance):")
+    
+    # Use research tool
+    research_result = research_tool("Quantum Computing")
+    print(f"\nResearch tool result: {research_result['summary']}")
+    
+    # Use slide creator tool
+    slides_result = slide_creator_tool("Quantum Computing Basics", 3)
+    print(f"Slides tool result: {slides_result['message']}")
+    
+    print("\nNote: These used cached performance data - no re-execution!")
+
+
+if __name__ == "__main__":
+    # Set up environment
+    os.environ["SIMULATION_MODE"] = "true"
+    os.environ["SIMULATION_ERROR_RATE"] = "0.0"
+    
+    print("=== Agent and Workflow Example ===")
+    
+    # Run the complete workflow
+    workflow_result = run_complete_workflow()
+    
+    print(f"\n\nFinal Workshop Plan:")
+    print(f"Topic: {workflow_result['workshop_plan']['topic']}")
+    print(f"Audience: {workflow_result['workshop_plan']['audience']}")
+    print(f"Presentation: {workflow_result['workshop_plan']['presentation_url']}")
+    
+    # Demonstrate agent as tool pattern
+    demonstrate_agent_as_tool()
+    
+    print("\n\nExample completed!")

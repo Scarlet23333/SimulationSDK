@@ -453,10 +453,10 @@ def _record_tool_metrics(tool_name: str, duration_ms: int, success: bool) -> Non
     
     # Simple scoring for non-agent tools
     if category != ToolCategory.AGENT_TOOL:
-        comment_score = 10.0 if success else 0.0
+        comment_score = {"score": 10.0 if success else 0.0, "reasoning": "Non-agent tool"}
     else:
         # AGENT_TOOL will get score from evaluator later
-        comment_score = 10.0 if success else 0.0  # Default, will be updated
+        comment_score = {"score": 10.0 if success else 0.0, "reasoning": "Default score for agent tool"}
     
     tool_metrics = ToolMetrics(
         tool_name=tool_name,
@@ -501,7 +501,7 @@ def _record_agent_tool_as_task(
     
     # Evaluate task performance automatically if no existing score
     if existing_score is not None:
-        score = existing_score
+        comment_score = existing_score
     else:
         try:
             evaluator = _get_evaluator()
@@ -520,9 +520,10 @@ def _record_agent_tool_as_task(
                 }
             score, reasoning = evaluator.evaluate_task(evaluation_context)
             logger.debug(f"Task '{agent_name}' evaluated: score={score}, reason={reasoning}")
+            comment_score = {"score": score, "reasoning": reasoning}
         except Exception as e:
             logger.warning(f"Failed to evaluate task '{agent_name}': {e}, using default score")
-            score = 10.0 if success else 0.0
+            comment_score = {"score": 10.0 if success else 0.0, "reasoning": "Evaluation failed, using default score"}
     
     # Create task metrics with evaluated score
     task_metrics = TaskMetrics(
@@ -533,7 +534,7 @@ def _record_agent_tool_as_task(
         tool_calls=tool_calls,
         total_tokens=total_tokens,
         total_duration=duration_ms,
-        comment_score=score
+        comment_score=comment_score
     )
     
     # Add task metrics to current workflow context
@@ -775,10 +776,10 @@ def _save_agent_performance(
         }
         score, reasoning = evaluator.evaluate_task(evaluation_context)
         logger.debug(f"Agent '{agent_name}' evaluated: score={score}, reason={reasoning}")
+        comment_score = {"score": score, "reasoning": reasoning}
     except Exception as e:
         logger.warning(f"Failed to evaluate agent '{agent_name}': {e}, using default score")
-        score = 10.0 if success else 0.0
-        reasoning = "Evaluation failed, using default score"
+        comment_score = {"score": 10.0 if success else 0.0, "reasoning": "Evaluation failed, using default score"}
     
     # Create task metrics with evaluated score
     task_metrics = TaskMetrics(
@@ -789,7 +790,7 @@ def _save_agent_performance(
         tool_calls=tool_metrics,
         total_tokens=total_tokens,
         total_duration=duration_ms,
-        comment_score=score
+        comment_score=comment_score
     )
     
     # Save task metrics to history
@@ -809,7 +810,7 @@ def _save_agent_performance(
     agent_performance = AgentPerformance(
         tokens=total_tokens,
         duration=duration_ms,
-        comment_score=score,
+        comment_score=comment_score,
     )
     
     # Create agent as tool summary

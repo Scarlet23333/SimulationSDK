@@ -138,10 +138,16 @@ class MockEvaluator(EvaluatorInterface):
             # Handle TaskMetrics objects or dicts
             if hasattr(task, 'comment_score'):
                 # TaskMetrics object - use existing score
-                task_scores.append(task.comment_score)
+                if isinstance(task.comment_score, dict):
+                    task_scores.append(task.comment_score['score'])
+                else:
+                    task_scores.append(task.comment_score)
             elif isinstance(task, dict) and 'comment_score' in task:
                 # Dict with comment_score
-                task_scores.append(task['comment_score'])
+                if isinstance(task['comment_score'], dict):
+                    task_scores.append(task['comment_score']['score'])
+                else:
+                    task_scores.append(task['comment_score'])
             else:
                 # Need to evaluate - create context for evaluation
                 task_context = task if isinstance(task, dict) else {"task_success": True}
@@ -248,14 +254,18 @@ class OpenAIEvaluator(EvaluatorInterface):
     def _format_workflow_tasks(self, tasks: List[Dict[str, Any]], task_summaries: Dict[str, Any]) -> str:
         """Format workflow tasks for evaluation prompt."""
         formatted = []
-        for i, task in enumerate(tasks[:10]):  # Limit to first 10
+        for i, task in enumerate(tasks):
             task_name = task.get("task_name", f"Task {i+1}")
-            task_score = task.get("comment_score", "N/A")
-            formatted.append(f"- {task_name}: {task_score}/10")
+            comment_score = task.get("comment_score", "N/A")
+            comment_reasoning = "N/A"
+            if isinstance(comment_score, dict):
+                task_score = comment_score.get('score', 'N/A')
+                comment_reasoning = comment_score.get('reasoning', 'N/A')
+            else:
+                task_score = comment_score
+            formatted.append(f"- {task_name}: {task_score}/10, reasoning: {comment_reasoning}")
         
         result = "\n".join(formatted)
-        if len(tasks) > 10:
-            result += f"\n... and {len(tasks) - 10} more tasks"
         
         return result
     
@@ -266,7 +276,7 @@ class OpenAIEvaluator(EvaluatorInterface):
 Agent: {agent_name}
 Execution successful: {task_success}
 
-Tool calls made by the agent:
+Tool calls made by the agent in order:
 {tool_calls_summary}
 
 Final output produced:
@@ -277,9 +287,9 @@ Performance metrics:
 - Duration: {duration}ms
 
 Evaluation criteria (in order of importance):
-1. Correctness: Did the agent produce the expected output?
-2. Efficiency: Did it use the minimum necessary tool calls?
-3. Token usage: Was the token consumption reasonable?
+1. Correctness: Did the agent produce the expected output? (refer to agent name to understand the goal and check the final output to see if it meets the goal)
+2. Efficiency: Did it use the minimum necessary tool calls in the correct order? Did its duration make sense? (refer to performance metrics to see the duration)
+3. Token usage: Was the token consumption reasonable? (refer to performance metrics to see the token usage)
 
 Consider the specific nature of this agent when weighting these criteria.
 For example, a research agent might justifiably use more tokens than a simple formatter.
@@ -297,7 +307,7 @@ Provide your evaluation in the following JSON format:
 Workflow: {workflow_name}
 Overall success: {workflow_success}
 
-Tasks executed ({num_tasks} total):
+Tasks executed in order (total {num_tasks}):
 {task_scores_summary}
 
 Overall metrics:
@@ -306,8 +316,8 @@ Overall metrics:
 - Estimated cost: ${total_cost:.4f}
 
 Evaluation criteria:
-1. Overall success: Did the workflow achieve its goal?
-2. Task coordination: Were tasks executed in logical order?
+1. Overall success: Did the workflow achieve its goal? (refer to workflow name to understand the goal)
+2. Task coordination: Were only necessary tasks executed in logical order and with appropriate dependencies?
 3. Resource efficiency: Was the token/time usage reasonable for the complexity?
 
 Weight the importance of each task based on its role in the workflow.

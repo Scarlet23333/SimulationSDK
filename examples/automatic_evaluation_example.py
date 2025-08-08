@@ -94,14 +94,14 @@ def main():
     
     if workflow_metrics:
         print(f"\n   Workflow automatically evaluated:")
-        print(f"   ✓ Overall score: {workflow_metrics.comment_score}/10")
+        print(f"   ✓ Overall score: {workflow_metrics.comment_score['score']}/10")
         print(f"   ✓ Total tokens: {workflow_metrics.total_tokens}")
         print(f"   ✓ Estimated cost: ${workflow_metrics.total_cost:.4f}")
         
         # Show individual task scores
         print(f"\n   Individual task scores:")
         for i, (topic, task) in enumerate(zip(topics, workflow_metrics.tasks)):
-            print(f"   - {topic}: {task.comment_score}/10")
+            print(f"   - {topic}: {task.comment_score['score']}/10")
         save_workflow_metrics(workflow_metrics)
     
     print("\n✓ Example completed!")

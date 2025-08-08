@@ -66,7 +66,14 @@ def aggregate_workflow_metrics(tasks: List[TaskMetrics]) -> Dict[str, Any]:
     total_tokens = sum(calculate_total_tokens(task) for task in tasks)
     total_duration = sum(task.total_duration for task in tasks)
     success_count = sum(1 for task in tasks if task.task_success)
-    average_score = sum(task.comment_score for task in tasks) / len(tasks)
+    # Extract scores from comment_score dicts
+    scores = []
+    for task in tasks:
+        if isinstance(task.comment_score, dict):
+            scores.append(task.comment_score.get('score', 0.0))
+        else:
+            scores.append(task.comment_score)
+    average_score = sum(scores) / len(scores) if scores else 0.0
     
     # Aggregate tool usage
     tool_usage = {}

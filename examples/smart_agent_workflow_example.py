@@ -212,7 +212,7 @@ def run_complete_workflow():
         )
         
         # End workflow successfully
-        workflow_metrics = context.end_workflow(success=True, comment_score=9)
+        workflow_metrics = context.end_workflow(success=True)
         
         if workflow_metrics:
             print(f"\n{'='*50}")
@@ -223,7 +223,7 @@ def run_complete_workflow():
             print(f"Total Duration: {workflow_metrics.total_duration}ms")
             print(f"Total Tokens: {workflow_metrics.total_tokens}")
             print(f"Estimated Cost: ${workflow_metrics.total_cost:.4f}")
-            print(f"Quality Score: {workflow_metrics.comment_score}/10")
+            print(f"Quality Score: {workflow_metrics.comment_score['score']}/10")
             
             # Save workflow metrics
             saved_path = save_workflow_metrics(workflow_metrics)
@@ -238,7 +238,7 @@ def run_complete_workflow():
         
     except Exception as e:
         print(f"\nWorkflow failed: {e}")
-        context.end_workflow(success=False, comment_score=2)
+        context.end_workflow(success=False)
         raise
 
 

@@ -780,7 +780,7 @@ class SQLiteIndexer:
                 metrics.task_success,
                 metrics.total_tokens,
                 metrics.total_duration,
-                metrics.comment_score
+                metrics.comment_score['score'] if isinstance(metrics.comment_score, dict) else metrics.comment_score
             ))
     
     def query_by_date_range(self, start: datetime, end: datetime) -> List[str]:

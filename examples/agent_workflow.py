@@ -77,8 +77,13 @@ def add_slide_content(presentation_id: str, slide_num: int, content: str):
     }
 
 
-# Step 2: Create atomic agents with @simulation_agent for testing
-@simulation_agent(name="slide_creator", delay_ms=500)
+# Step 2: Create agents with smart AGENT_TOOL decorator
+# No need for @simulation_agent anymore - just use AGENT_TOOL!
+@simulation_tool(
+    category=ToolCategory.AGENT_TOOL,
+    agent_name="slide_creator",
+    delay_ms=500
+)
 def slide_creator_agent(topic: str, num_slides: int = 5):
     """Agent that creates presentation slides on a topic"""
     print(f"\n=== Slide Creator Agent ===")
@@ -109,7 +114,11 @@ def slide_creator_agent(topic: str, num_slides: int = 5):
     }
 
 
-@simulation_agent(name="research_agent", delay_ms=300)
+@simulation_tool(
+    category=ToolCategory.AGENT_TOOL,
+    agent_name="research_agent",
+    delay_ms=300
+)
 def research_agent(topic: str):
     """Agent that researches a topic"""
     print(f"\n=== Research Agent ===")
@@ -131,7 +140,11 @@ def research_agent(topic: str):
 
 
 # Step 3: Create higher-level agent that coordinates others
-@simulation_agent(name="workshop_organizer", delay_ms=1000)
+@simulation_tool(
+    category=ToolCategory.AGENT_TOOL,
+    agent_name="workshop_organizer",
+    delay_ms=1000
+)
 def workshop_organizer_agent(workshop_topic: str, audience: str):
     """Agent that organizes a complete workshop"""
     print(f"\n=== Workshop Organizer Agent ===")
@@ -170,27 +183,9 @@ def workshop_organizer_agent(workshop_topic: str, audience: str):
     }
 
 
-# Step 4: After testing, create AGENT_TOOL wrappers
-@simulation_tool(
-    category=ToolCategory.AGENT_TOOL,
-    agent_name="slide_creator",
-    delay_range=(400, 600)
-)
-def slide_creator_tool(topic: str, num_slides: int = 5):
-    """Tool wrapper for slide_creator agent"""
-    # In production, this would call the actual agent
-    # In simulation, it loads cached performance
-    return slide_creator_agent(topic, num_slides)
-
-
-@simulation_tool(
-    category=ToolCategory.AGENT_TOOL,
-    agent_name="research_agent",
-    delay_ms=300
-)
-def research_tool(topic: str):
-    """Tool wrapper for research agent"""
-    return research_agent(topic)
+# Step 4: No need for separate tool wrappers anymore!
+# The AGENT_TOOL decorator handles everything automatically.
+# Just use the agent functions directly - they work as tools!
 
 
 # Workflow example
@@ -245,27 +240,29 @@ def run_complete_workflow():
         raise
 
 
-def demonstrate_agent_as_tool():
-    """Show how agents can be used as tools after testing"""
+def demonstrate_smart_agent_tools():
+    """Show how smart AGENT_TOOL pattern works"""
     print(f"\n\n{'='*50}")
-    print("Agent as Tool Pattern Demonstration")
+    print("Smart Agent Tool Pattern (NEW!)")
     print(f"{'='*50}\n")
     
-    # First merge any pending performance files
+    print("First call to agent - will execute and save performance:")
+    
+    # First call - executes the agent
+    result1 = research_agent("Machine Learning")
+    print(f"\nFirst call result: {result1['summary']}")
+    
+    # Merge performance files
     merge_performance_files()
     
-    # Now use the tool wrappers (which load cached performance in simulation)
-    print("Using agent tools (with cached performance):")
+    print("\n\nSecond call to same agent - uses cached performance:")
     
-    # Use research tool
-    research_result = research_tool("Quantum Computing")
-    print(f"\nResearch tool result: {research_result['summary']}")
+    # Second call - uses cached performance
+    result2 = research_agent("Machine Learning")
+    print(f"\nSecond call result: {result2['summary']}")
     
-    # Use slide creator tool
-    slides_result = slide_creator_tool("Quantum Computing Basics", 3)
-    print(f"Slides tool result: {slides_result['message']}")
-    
-    print("\nNote: These used cached performance data - no re-execution!")
+    print("\nNote: First call executed, second call used cached data!")
+    print("No need for separate @simulation_agent decorator!")
 
 
 if __name__ == "__main__":
@@ -283,7 +280,7 @@ if __name__ == "__main__":
     print(f"Audience: {workflow_result['workshop_plan']['audience']}")
     print(f"Presentation: {workflow_result['workshop_plan']['presentation_url']}")
     
-    # Demonstrate agent as tool pattern
-    demonstrate_agent_as_tool()
+    # Demonstrate smart agent tool pattern
+    demonstrate_smart_agent_tools()
     
     print("\n\nExample completed!")

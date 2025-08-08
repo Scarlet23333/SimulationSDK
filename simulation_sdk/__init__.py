@@ -9,7 +9,7 @@ __version__ = "0.1.0"
 __author__ = "SimulationSDK Team"
 
 # Core decorators
-from .decorators import simulation_tool, simulation_agent
+from .decorators import simulation_tool, simulation_agent, track_llm_tokens
 
 # Models
 from .models import ToolCategory, SimulationResponse
@@ -25,6 +25,7 @@ from .performance import PerformanceManager
 
 # Context and workflow utilities
 from .context import get_current_context
+
 
 
 def merge_performance_files() -> None:
@@ -58,6 +59,7 @@ __all__ = [
     # Decorators
     "simulation_tool",
     "simulation_agent",
+    "track_llm_tokens",
     
     # Models
     "ToolCategory",

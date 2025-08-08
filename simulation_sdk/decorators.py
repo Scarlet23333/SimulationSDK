@@ -31,6 +31,88 @@ from .context import SimulationContext, _thread_local
 from .performance import PerformanceManager
 
 
+def track_llm_tokens(func: Callable) -> Callable:
+    """
+    Decorator that automatically tracks LLM token usage.
+    Updates the parent simulation context (if any).
+    
+    Usage:
+        @track_llm_tokens
+        def my_llm_call(prompt: str):
+            response = openai.chat.completions.create(...)
+            return response
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Execute the LLM call
+        response = func(*args, **kwargs)
+        
+        # Get current context (from parent agent/tool)
+        context = SimulationContext.get_current()
+        if context and context.agent_name:  # We're inside an agent
+            # Extract tokens from various response formats
+            tokens = 0
+            
+            # OpenAI format
+            if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens'):
+                tokens = response.usage.total_tokens
+            # LangChain format
+            elif hasattr(response, 'llm_output') and isinstance(response.llm_output, dict):
+                token_usage = response.llm_output.get('token_usage', {})
+                tokens = token_usage.get('total_tokens', 0)
+            # Dict format
+            elif isinstance(response, dict):
+                usage = response.get('usage', {})
+                if isinstance(usage, dict):
+                    tokens = usage.get('total_tokens', 0)
+                elif hasattr(usage, 'total_tokens'):
+                    tokens = usage.total_tokens
+            
+            # Add tokens to current context
+            if tokens > 0:
+                context.add_llm_tokens(tokens)
+        
+        return response
+    
+    # Support async functions
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Execute the LLM call
+        response = await func(*args, **kwargs)
+        
+        # Get current context (from parent agent/tool)
+        context = SimulationContext.get_current()
+        if context and context.agent_name:  # We're inside an agent
+            # Extract tokens from various response formats
+            tokens = 0
+            
+            # OpenAI format
+            if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens'):
+                tokens = response.usage.total_tokens
+            # LangChain format
+            elif hasattr(response, 'llm_output') and isinstance(response.llm_output, dict):
+                token_usage = response.llm_output.get('token_usage', {})
+                tokens = token_usage.get('total_tokens', 0)
+            # Dict format
+            elif isinstance(response, dict):
+                usage = response.get('usage', {})
+                if isinstance(usage, dict):
+                    tokens = usage.get('total_tokens', 0)
+                elif hasattr(usage, 'total_tokens'):
+                    tokens = usage.total_tokens
+            
+            # Add tokens to current context
+            if tokens > 0:
+                context.add_llm_tokens(tokens)
+        
+        return response
+    
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return wrapper
+
+
 def simulation_tool(
     category: ToolCategory,
     delay_ms: Optional[int] = None,
@@ -118,9 +200,20 @@ def simulation_tool(
                         result = agent_summary.simulated_result.final_output
                         duration_ms = agent_summary.performance.duration
                     else:
-                        # Fallback if no saved performance
-                        result = f"Simulated {agent_name} execution"
-                        duration_ms = 100
+                        # No saved performance - execute as simulation_agent first
+                        # This allows using just one decorator for agent tools
+                        agent_wrapper = simulation_agent(name=agent_name)(func)
+                        result = await agent_wrapper(*args, **kwargs)
+                        
+                        # Merge temp files to make performance available
+                        performance_manager.merge_temp_to_latest()
+                        
+                        # Now load the saved performance
+                        agent_summary = performance_manager.load_agent_performance(agent_name)
+                        if agent_summary:
+                            duration_ms = agent_summary.performance.duration
+                        else:
+                            duration_ms = int((time.time() - start_time) * 1000)
                 
                 elif simulation_mode and category == ToolCategory.PRODUCTION_AFFECTING:
                     # Use simulated response from templates
@@ -176,9 +269,20 @@ def simulation_tool(
                         result = agent_summary.simulated_result.final_output
                         duration_ms = agent_summary.performance.duration
                     else:
-                        # Fallback if no saved performance
-                        result = f"Simulated {agent_name} execution"
-                        duration_ms = 100
+                        # No saved performance - execute as simulation_agent first
+                        # This allows using just one decorator for agent tools
+                        agent_wrapper = simulation_agent(name=agent_name)(func)
+                        result = agent_wrapper(*args, **kwargs)
+                        
+                        # Merge temp files to make performance available
+                        performance_manager.merge_temp_to_latest()
+                        
+                        # Now load the saved performance
+                        agent_summary = performance_manager.load_agent_performance(agent_name)
+                        if agent_summary:
+                            duration_ms = agent_summary.performance.duration
+                        else:
+                            duration_ms = int((time.time() - start_time) * 1000)
                 
                 elif simulation_mode and category == ToolCategory.PRODUCTION_AFFECTING:
                     # Use simulated response from templates

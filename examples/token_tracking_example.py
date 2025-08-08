@@ -159,7 +159,7 @@ def simulate_workflow_with_tracking():
         content_result = content_creator_agent(research_result)
         
         # End workflow
-        metrics = context.end_workflow(success=True)
+        metrics = context.end_workflow()
         
         if metrics:
             print(f"\n=== Workflow Metrics ===")
@@ -176,7 +176,7 @@ def simulate_workflow_with_tracking():
         
     except Exception as e:
         print(f"Workflow failed: {e}")
-        context.end_workflow(success=False)
+        context.end_workflow()
         raise
 
 

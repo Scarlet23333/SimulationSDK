@@ -88,7 +88,7 @@ def main():
         print(f"   ✓ Researched: {topic}")
     
     # End workflow - automatic evaluation will occur
-    workflow_metrics = context.end_workflow(success=True)
+    workflow_metrics = context.end_workflow()
     
     merge_performance_files()
     

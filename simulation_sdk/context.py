@@ -129,12 +129,13 @@ class SimulationContext:
             self.workflow_tasks.append(task_metrics)
             logger.debug(f"Added task metrics to workflow: {task_metrics.task_name}")
             
-    def end_workflow(self, success: bool) -> Optional[WorkflowMetrics]:
+    def end_workflow(self) -> Optional[WorkflowMetrics]:
         """
         End the current workflow and return WorkflowMetrics.
         
-        Args:
-            success: Whether the workflow succeeded overall
+        Automatically determines workflow success based on task statuses:
+        - If all tasks succeeded, workflow succeeds
+        - If any task failed, workflow fails
             
         Returns:
             WorkflowMetrics for the completed workflow, or None if no workflow
@@ -142,6 +143,9 @@ class SimulationContext:
         if not self.workflow_id or not self.workflow_start_time:
             logger.warning("No workflow in progress")
             return None
+            
+        # Automatically determine workflow success based on task statuses
+        workflow_success = all(task.task_success for task in self.workflow_tasks)
             
         # Calculate totals
         total_tokens = sum(task.total_tokens for task in self.workflow_tasks)
@@ -168,12 +172,12 @@ class SimulationContext:
             evaluation_context = {
                 # Top-level fields for MockEvaluator compatibility
                 "workflow_name": self.workflow_name,
-                "workflow_success": success,
+                "workflow_success": workflow_success,
                 "tasks": self.workflow_tasks,  # Pass TaskMetrics objects directly
                 # Nested format for OpenAIEvaluator
                 "workflow_metrics": {
                     "workflow_name": self.workflow_name,
-                    "workflow_success": success,
+                    "workflow_success": workflow_success,
                     "tasks": [task.model_dump() for task in self.workflow_tasks],
                     "total_tokens": total_tokens,
                     "total_duration": duration_ms,
@@ -187,12 +191,12 @@ class SimulationContext:
             comment_score = {"score": score, "reasoning": reasoning}
         except Exception as e:
             logger.warning(f"Failed to evaluate workflow '{self.workflow_name}': {e}, using default score")
-            comment_score = {"score": 8.0 if success else 2.0, "reasoning": "Evaluation failed, using default score"}
+            comment_score = {"score": 8.0 if workflow_success else 2.0, "reasoning": "Evaluation failed, using default score"}
         
         workflow_metrics = WorkflowMetrics(
             workflow_id=self.workflow_id,
             workflow_name=self.workflow_name,
-            workflow_success=success,
+            workflow_success=workflow_success,
             tasks=self.workflow_tasks,
             total_tokens=total_tokens,
             total_duration=duration_ms,

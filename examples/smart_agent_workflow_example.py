@@ -212,7 +212,7 @@ def run_complete_workflow():
         )
         
         # End workflow successfully
-        workflow_metrics = context.end_workflow(success=True)
+        workflow_metrics = context.end_workflow()
         
         if workflow_metrics:
             print(f"\n{'='*50}")
@@ -238,7 +238,7 @@ def run_complete_workflow():
         
     except Exception as e:
         print(f"\nWorkflow failed: {e}")
-        context.end_workflow(success=False)
+        context.end_workflow()
         raise
 
 

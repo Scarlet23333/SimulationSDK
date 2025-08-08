@@ -49,7 +49,7 @@ def track_llm_tokens(func: Callable) -> Callable:
         
         # Get current context (from parent agent/tool)
         context = SimulationContext.get_current()
-        if context and context.agent_name:  # We're inside an agent
+        if context:  # We're inside an agent or tool
             # Extract tokens from various response formats
             tokens = 0
             
@@ -82,7 +82,7 @@ def track_llm_tokens(func: Callable) -> Callable:
         
         # Get current context (from parent agent/tool)
         context = SimulationContext.get_current()
-        if context and context.agent_name:  # We're inside an agent
+        if context:  # We're inside an agent or tool
             # Extract tokens from various response formats
             tokens = 0
             
@@ -174,11 +174,32 @@ def simulation_tool(
             # Check if we're in simulation mode
             simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
             
-            # For read-only tools, always execute normally
-            if category == ToolCategory.READ_ONLY:
-                simulation_mode = False
+            # Fast path for production mode - minimal overhead
+            if not simulation_mode:
+                if category == ToolCategory.READ_ONLY:
+                    # Execute and return immediately
+                    return await func(*args, **kwargs)
+                elif category == ToolCategory.PRODUCTION_AFFECTING:
+                    # Execute real function in production
+                    return await func(*args, **kwargs)
+                elif category == ToolCategory.AGENT_TOOL:
+                    # Execute real function in production
+                    return await func(*args, **kwargs)
             
-            # Apply delay if specified
+            # For read-only tools in simulation mode, always execute but record metrics
+            if category == ToolCategory.READ_ONLY:
+                start_time = time.time()
+                try:
+                    result = await func(*args, **kwargs)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    _record_tool_metrics(tool_name, duration_ms, success=True)
+                    return result
+                except Exception as e:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    _record_tool_metrics(tool_name, duration_ms, success=False)
+                    raise
+            
+            # Only in simulation mode from here - apply delay if specified
             delay = 0
             if delay_ms is not None:
                 delay = delay_ms / 1000.0
@@ -191,7 +212,7 @@ def simulation_tool(
             start_time = time.time()
             
             try:
-                if simulation_mode and category == ToolCategory.AGENT_TOOL:
+                if category == ToolCategory.AGENT_TOOL:
                     # Load performance from latest_agent_performance.json
                     performance_manager = PerformanceManager()
                     agent_summary = performance_manager.load_agent_performance(agent_name)
@@ -199,23 +220,26 @@ def simulation_tool(
                     if agent_summary and agent_summary.simulated_result:
                         result = agent_summary.simulated_result.final_output
                         duration_ms = agent_summary.performance.duration
+                        # Record as both tool metrics and task metrics
+                        _record_agent_tool_as_task(agent_name, agent_summary, duration_ms, True, result)
                     else:
                         # No saved performance - execute as simulation_agent first
-                        # This allows using just one decorator for agent tools
+                        # This will automatically create TaskMetrics and add to workflow
                         agent_wrapper = simulation_agent(name=agent_name)(func)
                         result = await agent_wrapper(*args, **kwargs)
                         
                         # Merge temp files to make performance available
                         performance_manager.merge_temp_to_latest()
                         
-                        # Now load the saved performance
+                        # Now load the saved performance for duration
                         agent_summary = performance_manager.load_agent_performance(agent_name)
                         if agent_summary:
                             duration_ms = agent_summary.performance.duration
                         else:
                             duration_ms = int((time.time() - start_time) * 1000)
+                        # Don't record again - simulation_agent already did it
                 
-                elif simulation_mode and category == ToolCategory.PRODUCTION_AFFECTING:
+                elif category == ToolCategory.PRODUCTION_AFFECTING:
                     # Use simulated response from templates
                     result = _simulate_production_tool(
                         func, tool_name, success_template, failure_template, args, kwargs
@@ -223,11 +247,10 @@ def simulation_tool(
                     duration_ms = int((time.time() - start_time) * 1000)
                 
                 else:
-                    # Execute real function
-                    result = await func(*args, **kwargs)
-                    duration_ms = int((time.time() - start_time) * 1000)
+                    # Should not reach here in simulation mode
+                    raise ValueError(f"Unknown tool category: {category}")
                 
-                # Record metrics
+                # Record metrics (we're in simulation mode)
                 _record_tool_metrics(tool_name, duration_ms, success=True)
                 
                 return result
@@ -236,6 +259,11 @@ def simulation_tool(
                 # Record failure metrics
                 duration_ms = int((time.time() - start_time) * 1000)
                 _record_tool_metrics(tool_name, duration_ms, success=False)
+                
+                # For AGENT_TOOL, also record as failed task
+                if category == ToolCategory.AGENT_TOOL:
+                    _record_agent_tool_as_task(agent_name, None, duration_ms, False, {"error": str(e)})
+                
                 raise
         
         @functools.wraps(func)
@@ -243,11 +271,32 @@ def simulation_tool(
             # Check if we're in simulation mode
             simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
             
-            # For read-only tools, always execute normally
-            if category == ToolCategory.READ_ONLY:
-                simulation_mode = False
+            # Fast path for production mode - minimal overhead
+            if not simulation_mode:
+                if category == ToolCategory.READ_ONLY:
+                    # Execute and return immediately
+                    return func(*args, **kwargs)
+                elif category == ToolCategory.PRODUCTION_AFFECTING:
+                    # Execute real function in production
+                    return func(*args, **kwargs)
+                elif category == ToolCategory.AGENT_TOOL:
+                    # Execute real function in production
+                    return func(*args, **kwargs)
             
-            # Apply delay if specified
+            # For read-only tools in simulation mode, always execute but record metrics
+            if category == ToolCategory.READ_ONLY:
+                start_time = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    _record_tool_metrics(tool_name, duration_ms, success=True)
+                    return result
+                except Exception as e:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    _record_tool_metrics(tool_name, duration_ms, success=False)
+                    raise
+            
+            # Only in simulation mode from here - apply delay if specified
             delay = 0
             if delay_ms is not None:
                 delay = delay_ms / 1000.0
@@ -260,7 +309,7 @@ def simulation_tool(
             start_time = time.time()
             
             try:
-                if simulation_mode and category == ToolCategory.AGENT_TOOL:
+                if category == ToolCategory.AGENT_TOOL:
                     # Load performance from latest_agent_performance.json
                     performance_manager = PerformanceManager()
                     agent_summary = performance_manager.load_agent_performance(agent_name)
@@ -268,23 +317,26 @@ def simulation_tool(
                     if agent_summary and agent_summary.simulated_result:
                         result = agent_summary.simulated_result.final_output
                         duration_ms = agent_summary.performance.duration
+                        # Record as both tool metrics and task metrics
+                        _record_agent_tool_as_task(agent_name, agent_summary, duration_ms, True, result)
                     else:
                         # No saved performance - execute as simulation_agent first
-                        # This allows using just one decorator for agent tools
+                        # This will automatically create TaskMetrics and add to workflow
                         agent_wrapper = simulation_agent(name=agent_name)(func)
                         result = agent_wrapper(*args, **kwargs)
                         
                         # Merge temp files to make performance available
                         performance_manager.merge_temp_to_latest()
                         
-                        # Now load the saved performance
+                        # Now load the saved performance for duration
                         agent_summary = performance_manager.load_agent_performance(agent_name)
                         if agent_summary:
                             duration_ms = agent_summary.performance.duration
                         else:
                             duration_ms = int((time.time() - start_time) * 1000)
+                        # Don't record again - simulation_agent already did it
                 
-                elif simulation_mode and category == ToolCategory.PRODUCTION_AFFECTING:
+                elif category == ToolCategory.PRODUCTION_AFFECTING:
                     # Use simulated response from templates
                     result = _simulate_production_tool(
                         func, tool_name, success_template, failure_template, args, kwargs
@@ -292,11 +344,10 @@ def simulation_tool(
                     duration_ms = int((time.time() - start_time) * 1000)
                 
                 else:
-                    # Execute real function
-                    result = func(*args, **kwargs)
-                    duration_ms = int((time.time() - start_time) * 1000)
+                    # Should not reach here in simulation mode
+                    raise ValueError(f"Unknown tool category: {category}")
                 
-                # Record metrics
+                # Record metrics (we're in simulation mode)
                 _record_tool_metrics(tool_name, duration_ms, success=True)
                 
                 return result
@@ -305,6 +356,11 @@ def simulation_tool(
                 # Record failure metrics
                 duration_ms = int((time.time() - start_time) * 1000)
                 _record_tool_metrics(tool_name, duration_ms, success=False)
+                
+                # For AGENT_TOOL, also record as failed task
+                if category == ToolCategory.AGENT_TOOL:
+                    _record_agent_tool_as_task(agent_name, None, duration_ms, False, {"error": str(e)})
+                
                 raise
         
         if is_async:
@@ -369,17 +425,71 @@ def _simulate_production_tool(
 
 def _record_tool_metrics(tool_name: str, duration_ms: int, success: bool) -> None:
     """Record tool execution metrics."""
+    # Get tool category from registry
+    registry = ToolRegistry()
+    category = registry.get_category(tool_name)
+    
+    # Simple scoring for non-agent tools
+    if category != ToolCategory.AGENT_TOOL:
+        comment_score = 10.0 if success else 0.0
+    else:
+        # AGENT_TOOL will get score from evaluator later
+        comment_score = 10.0 if success else 0.0  # Default, will be updated
+    
     tool_metrics = ToolMetrics(
         tool_name=tool_name,
         tokens=0,  # Would need to calculate based on result size
         duration=duration_ms,
-        comment_score=10 if success else 0
+        comment_score=comment_score
     )
     
     # Add metrics to context if available
     context = SimulationContext.get_current()
     if context:
         context.add_tool_metrics(tool_metrics)
+
+
+def _record_agent_tool_as_task(
+    agent_name: str, 
+    agent_summary: Optional[AgentAsToolSummary], 
+    duration_ms: int,
+    success: bool,
+    result: Any
+) -> None:
+    """Record AGENT_TOOL execution as a task in the workflow."""
+    # Generate task ID
+    task_id = f"{agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    
+    # Extract metrics from agent summary if available
+    if agent_summary and agent_summary.simulated_result:
+        tool_calls = [
+            ToolMetrics(**tc) if isinstance(tc, dict) else tc
+            for tc in agent_summary.simulated_result.tool_calls
+        ]
+        total_tokens = agent_summary.performance.tokens
+        llm_tokens = max(0, total_tokens - sum(tm.tokens for tm in tool_calls))
+    else:
+        # No summary available, use defaults
+        tool_calls = []
+        llm_tokens = 100 if success else 50
+        total_tokens = llm_tokens
+    
+    # Create task metrics
+    task_metrics = TaskMetrics(
+        task_id=task_id,
+        task_name=agent_name,
+        task_success=success,
+        llm_tokens=llm_tokens,
+        tool_calls=tool_calls,
+        total_tokens=total_tokens,
+        total_duration=duration_ms,
+        comment_score=10.0 if success else 0.0
+    )
+    
+    # Add task metrics to current workflow context
+    context = SimulationContext.get_current()
+    if context and context.workflow_id:
+        context.add_task_metrics(task_metrics)
 
 
 def simulation_agent(
@@ -472,6 +582,11 @@ def _execute_agent_sync(func: Callable, agent_name: str, args: tuple, kwargs: di
     # Check if we're in simulation mode
     simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
     
+    # If not in simulation mode, just execute the function directly
+    if not simulation_mode:
+        return func(*args, **kwargs)
+    
+    # Only create context and track performance in simulation mode
     # Create new SimulationContext for agent execution
     agent_context = SimulationContext()
     agent_context.agent_name = agent_name
@@ -482,9 +597,6 @@ def _execute_agent_sync(func: Callable, agent_name: str, args: tuple, kwargs: di
     # Generate task ID
     task_id = f"{agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     
-    # Extract task goal from arguments
-    task_goal = _extract_task_goal(args, kwargs)
-    
     try:
         # Set the context as current
         original_context = SimulationContext.get_current()
@@ -493,22 +605,20 @@ def _execute_agent_sync(func: Callable, agent_name: str, args: tuple, kwargs: di
         # Execute the agent
         result = func(*args, **kwargs)
         
-        # Save performance data only in simulation mode
-        if simulation_mode:
-            _save_agent_performance(
-                agent_name, task_id, task_goal, start_time, 
-                agent_context, result, success=True, original_context=original_context
-            )
+        # Save performance data
+        _save_agent_performance(
+            agent_name, task_id, start_time, 
+            agent_context, result, success=True, original_context=original_context
+        )
         
         return result
         
     except Exception as e:
-        # Save performance data even on failure, but only in simulation mode
-        if simulation_mode:
-            _save_agent_performance(
-                agent_name, task_id, task_goal, start_time,
-                agent_context, {"error": str(e)}, success=False, original_context=original_context
-            )
+        # Save performance data even on failure
+        _save_agent_performance(
+            agent_name, task_id, start_time,
+            agent_context, {"error": str(e)}, success=False, original_context=original_context
+        )
         raise
         
     finally:
@@ -521,6 +631,11 @@ async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwa
     # Check if we're in simulation mode
     simulation_mode = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
     
+    # If not in simulation mode, just execute the function directly
+    if not simulation_mode:
+        return await func(*args, **kwargs)
+    
+    # Only create context and track performance in simulation mode
     # Create new SimulationContext for agent execution
     agent_context = SimulationContext()
     agent_context.agent_name = agent_name
@@ -531,9 +646,6 @@ async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwa
     # Generate task ID
     task_id = f"{agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     
-    # Extract task goal from arguments
-    task_goal = _extract_task_goal(args, kwargs)
-    
     try:
         # Set the context as current
         original_context = SimulationContext.get_current()
@@ -542,22 +654,20 @@ async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwa
         # Execute the agent
         result = await func(*args, **kwargs)
         
-        # Save performance data only in simulation mode
-        if simulation_mode:
-            _save_agent_performance(
-                agent_name, task_id, task_goal, start_time,
-                agent_context, result, success=True
-            )
+        # Save performance data
+        _save_agent_performance(
+            agent_name, task_id, start_time,
+            agent_context, result, success=True, original_context=original_context
+        )
         
         return result
         
     except Exception as e:
-        # Save performance data even on failure, but only in simulation mode
-        if simulation_mode:
-            _save_agent_performance(
-                agent_name, task_id, task_goal, start_time,
-                agent_context, {"error": str(e)}, success=False, original_context=original_context
-            )
+        # Save performance data even on failure
+        _save_agent_performance(
+            agent_name, task_id, start_time,
+            agent_context, {"error": str(e)}, success=False, original_context=original_context
+        )
         raise
         
     finally:
@@ -565,22 +675,11 @@ async def _execute_agent_async(func: Callable, agent_name: str, args: tuple, kwa
         _thread_local.context = original_context
 
 
-def _extract_task_goal(args: tuple, kwargs: dict) -> str:
-    """Extract task goal from function arguments."""
-    if args:
-        return str(args[0])
-    elif "task_goal" in kwargs:
-        return kwargs["task_goal"]
-    elif "task" in kwargs:
-        return str(kwargs["task"])
-    else:
-        return "Unknown task"
 
 
 def _save_agent_performance(
     agent_name: str,
     task_id: str,
-    task_goal: str,
     start_time: float,
     agent_context: SimulationContext,
     result: Any,
@@ -596,7 +695,11 @@ def _save_agent_performance(
     
     # Calculate total tokens
     tool_tokens = sum(tm.tokens for tm in tool_metrics)
-    llm_tokens = 100 if success else 50  # Default estimate
+    # Get LLM tokens from context (tracked by @track_llm_tokens)
+    llm_tokens = getattr(agent_context, 'llm_tokens', 0)
+    # Use default only if no tokens were tracked
+    if llm_tokens == 0:
+        llm_tokens = 100 if success else 50  # Default estimate
     total_tokens = llm_tokens + tool_tokens
     
     # Create task metrics
@@ -608,7 +711,7 @@ def _save_agent_performance(
         tool_calls=tool_metrics,
         total_tokens=total_tokens,
         total_duration=duration_ms,
-        comment_score=10 if success else 0
+        comment_score=10.0 if success else 0.0
     )
     
     # Save task metrics to history
@@ -628,12 +731,11 @@ def _save_agent_performance(
     agent_performance = AgentPerformance(
         tokens=total_tokens,
         duration=duration_ms,
-        comment_score=10 if success else 0,
+        comment_score=10.0 if success else 0.0,
     )
     
     # Create simulated result
     simulated_result = AgentSimulatedResult(
-        task_goal=task_goal,
         tool_calls=[tm.model_dump() for tm in tool_metrics],
         final_output=result,
     )

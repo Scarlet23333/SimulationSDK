@@ -87,7 +87,7 @@ class MockEvaluator(EvaluatorInterface):
         - 0-3 for failed tasks
         """
         task_success = context.get("task_success", True)
-        task_goal = context.get("task_goal", "Unknown task")
+        task_name = context.get("task_name", context.get("agent_name", "Unknown task"))
         tool_calls = context.get("tool_calls", [])
         
         if task_success:
@@ -103,7 +103,7 @@ class MockEvaluator(EvaluatorInterface):
                 score = base_score
             
             reasoning = (
-                f"Task '{task_goal}' completed successfully. "
+                f"Task '{task_name}' completed successfully. "
                 f"Used {len(tool_calls)} tool calls efficiently. "
                 f"Output quality appears satisfactory based on mock evaluation."
             )
@@ -111,7 +111,7 @@ class MockEvaluator(EvaluatorInterface):
             # Failed tasks get scores between 0 and 3
             score = random.uniform(0.0, 3.0)
             reasoning = (
-                f"Task '{task_goal}' failed to complete successfully. "
+                f"Task '{task_name}' failed to complete successfully. "
                 f"Execution issues detected in the process. "
                 f"Consider reviewing error handling and retry logic."
             )
@@ -208,64 +208,105 @@ class OpenAIEvaluator(EvaluatorInterface):
         # Set up fallback evaluator
         self.fallback_evaluator = fallback_evaluator or MockEvaluator()
     
+    def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
+        """Format tool calls for the prompt."""
+        if not tool_calls:
+            return "No tool calls made"
+        
+        formatted = []
+        for i, call in enumerate(tool_calls[:10]):  # Limit to first 10
+            tool_name = call.get("tool_name", "unknown")
+            formatted.append(f"{i+1}. {tool_name}")
+        
+        result = "\n".join(formatted)
+        if len(tool_calls) > 10:
+            result += f"\n... and {len(tool_calls) - 10} more tool calls"
+        
+        return result
+    
+    def _truncate_output(self, output: Any, max_length: int = 500) -> str:
+        """Truncate output to avoid token limits."""
+        if isinstance(output, (dict, list)):
+            output_str = json.dumps(output, indent=2)
+        else:
+            output_str = str(output)
+        
+        if len(output_str) > max_length:
+            return output_str[:max_length] + "\n... (truncated)"
+        return output_str
+    
+    def _format_workflow_tasks(self, tasks: List[Dict[str, Any]], task_summaries: Dict[str, Any]) -> str:
+        """Format workflow tasks for evaluation prompt."""
+        formatted = []
+        for i, task in enumerate(tasks[:10]):  # Limit to first 10
+            task_name = task.get("task_name", f"Task {i+1}")
+            task_score = task.get("comment_score", "N/A")
+            formatted.append(f"- {task_name}: {task_score}/10")
+        
+        result = "\n".join(formatted)
+        if len(tasks) > 10:
+            result += f"\n... and {len(tasks) - 10} more tasks"
+        
+        return result
+    
     def _get_default_task_prompt(self) -> str:
         """Get default prompt template for task evaluation."""
-        return """You are an expert AI system evaluator. Evaluate the following task execution on a scale of 0-10.
+        return """You are an expert AI system evaluator. Evaluate this agent's performance on a scale of 0-10.
 
-Task Goal: {task_goal}
+Agent: {agent_name}
+Execution successful: {task_success}
 
-Task Success: {task_success}
+Tool calls made by the agent:
+{tool_calls_summary}
 
-Tool Calls Made: {tool_calls_summary}
-
-Execution Trace Summary:
-{execution_summary}
-
-Final Output:
+Final output produced:
 {final_output}
 
-Evaluation Criteria:
-1. Goal Achievement (0-4 points): Did the task achieve its stated goal?
-2. Efficiency (0-2 points): Were resources used efficiently? Minimal redundant tool calls?
-3. Quality (0-2 points): Is the output high quality and complete?
-4. Error Handling (0-2 points): Were errors handled gracefully?
+Performance metrics:
+- Tokens used: {tokens}
+- Duration: {duration}ms
+
+Evaluation criteria (in order of importance):
+1. Correctness: Did the agent produce the expected output?
+2. Efficiency: Did it use the minimum necessary tool calls?
+3. Token usage: Was the token consumption reasonable?
+
+Consider the specific nature of this agent when weighting these criteria.
+For example, a research agent might justifiably use more tokens than a simple formatter.
 
 Provide your evaluation in the following JSON format:
 {{
-    "score": <float between 0 and 10>,
-    "reasoning": "<detailed explanation of the score>",
-    "strengths": ["<strength1>", "<strength2>"],
-    "weaknesses": ["<weakness1>", "<weakness2>"],
-    "suggestions": ["<suggestion1>", "<suggestion2>"]
+    "score": <float between 0.0 and 10.0>,
+    "reasoning": "<brief explanation (2-3 sentences)>"
 }}"""
     
     def _get_default_workflow_prompt(self) -> str:
         """Get default prompt template for workflow evaluation."""
-        return """You are an expert AI system evaluator. Evaluate the following workflow execution on a scale of 0-10.
+        return """You are an expert AI system evaluator. Evaluate this workflow's overall performance on a scale of 0-10.
 
-Workflow Name: {workflow_name}
-Workflow Goal: {workflow_goal}
-Workflow Success: {workflow_success}
+Workflow: {workflow_name}
+Overall success: {workflow_success}
 
-Number of Tasks: {num_tasks}
-Task Success Rate: {task_success_rate}%
-
-Individual Task Scores:
+Tasks executed ({num_tasks} total):
 {task_scores_summary}
 
-Evaluation Criteria:
-1. Overall Goal Achievement (0-4 points): Did the workflow achieve its objective?
-2. Task Coordination (0-2 points): Were tasks well-coordinated and sequenced?
-3. Efficiency (0-2 points): Was the workflow efficient without redundancy?
-4. Robustness (0-2 points): Did the workflow handle failures gracefully?
+Overall metrics:
+- Total tokens: {total_tokens}
+- Total duration: {total_duration}ms
+- Estimated cost: ${total_cost:.4f}
+
+Evaluation criteria:
+1. Overall success: Did the workflow achieve its goal?
+2. Task coordination: Were tasks executed in logical order?
+3. Resource efficiency: Was the token/time usage reasonable for the complexity?
+
+Weight the importance of each task based on its role in the workflow.
+Critical path tasks should have more impact on the score than auxiliary ones.
 
 Provide your evaluation in the following JSON format:
 {{
-    "score": <float between 0 and 10>,
-    "reasoning": "<detailed explanation of the score>",
-    "strengths": ["<strength1>", "<strength2>"],
-    "weaknesses": ["<weakness1>", "<weakness2>"],
-    "suggestions": ["<suggestion1>", "<suggestion2>"]
+    "score": <float between 0.0 and 10.0>,
+    "reasoning": "<brief explanation (3-4 sentences)>"
 }}"""
     
     def _call_openai(self, prompt: str) -> Optional[Dict[str, Any]]:
@@ -303,61 +344,52 @@ Provide your evaluation in the following JSON format:
             return None
     
     def evaluate_task(self, context: Dict[str, Any]) -> Tuple[float, str]:
-        """Evaluate task using OpenAI API with fallback to mock evaluator."""
-        # Prepare context for prompt
-        task_goal = context.get("task_goal", "Unknown")
-        task_success = context.get("task_success", False)
-        tool_calls = context.get("tool_calls", [])
-        execution_trace = context.get("execution_trace", {})
-        final_output = context.get("final_output", "No output")
+        """Evaluate task using OpenAI API with fallback to mock evaluator.
+        
+        Only evaluates AGENT_TOOL tasks. Other tool types return fixed scores.
+        """
+        # Check if this is an AGENT_TOOL evaluation
+        agent_name = context.get("agent_name", "")
+        agent_summary = context.get("agent_summary")
+        
+        if not agent_summary:
+            # Not an AGENT_TOOL, return simple score
+            task_success = context.get("task_success", False)
+            return (10.0 if task_success else 0.0, "Non-agent tool")
+        
+        # Extract information from agent_summary
+        task_success = context.get("success", False)
+        
+        if not task_success:
+            return 0.0, "Task failed"
+        
+        # Get tool calls and final output from agent_summary
+        tool_calls = agent_summary.get("tool_calls", [])
+        final_output = agent_summary.get("final_output", {})
+        performance = agent_summary.get("performance", {})
         
         # Summarize tool calls
-        tool_calls_summary = f"{len(tool_calls)} tool calls made"
-        if tool_calls:
-            tool_names = [call.get("tool_name", "unknown") for call in tool_calls[:5]]
-            tool_calls_summary += f": {', '.join(tool_names)}"
-            if len(tool_calls) > 5:
-                tool_calls_summary += f", and {len(tool_calls) - 5} more"
+        tool_calls_summary = self._format_tool_calls(tool_calls)
         
-        # Summarize execution trace
-        execution_summary = json.dumps(execution_trace, indent=2)[:500]
-        if len(json.dumps(execution_trace)) > 500:
-            execution_summary += "\n... (truncated)"
-        
-        # Format final output
-        if isinstance(final_output, (dict, list)):
-            final_output_str = json.dumps(final_output, indent=2)[:500]
-        else:
-            final_output_str = str(final_output)[:500]
+        # Format final output (truncate if too long)
+        final_output_str = self._truncate_output(final_output, max_length=500)
         
         # Create prompt
         prompt = self.task_prompt_template.format(
-            task_goal=task_goal,
+            agent_name=agent_name,
             task_success=task_success,
             tool_calls_summary=tool_calls_summary,
-            execution_summary=execution_summary,
-            final_output=final_output_str
+            final_output=final_output_str,
+            tokens=performance.get("tokens", 0),
+            duration=performance.get("duration", 0)
         )
         
         # Try OpenAI evaluation
         result = self._call_openai(prompt)
         
         if result:
-            score = float(result.get("score", 5.0))
+            score = float(result.get("score", 8.0))
             reasoning = result.get("reasoning", "No reasoning provided")
-            
-            # Optionally create full EvaluationResult
-            if "strengths" in result:
-                evaluation_result = EvaluationResult(
-                    comment_score=int(score),
-                    reasoning=reasoning,
-                    strengths=result.get("strengths", []),
-                    weaknesses=result.get("weaknesses", []),
-                    suggestions=result.get("suggestions", [])
-                )
-                # Store in context for later use
-                context["evaluation_result"] = evaluation_result
-            
             return score, reasoning
         else:
             # Fall back to mock evaluator
@@ -366,40 +398,30 @@ Provide your evaluation in the following JSON format:
     
     def evaluate_workflow(self, context: Dict[str, Any]) -> Tuple[float, str]:
         """Evaluate workflow using OpenAI API with fallback to mock evaluator."""
-        # Prepare context for prompt
-        workflow_name = context.get("workflow_name", "Unknown")
-        workflow_goal = context.get("workflow_goal", "Unknown objective")
-        workflow_success = context.get("workflow_success", False)
-        tasks = context.get("tasks", [])
+        # Get workflow metrics from context
+        workflow_metrics = context.get("workflow_metrics", {})
+        task_execution_summaries = context.get("task_execution_summaries", {})
         
-        # Calculate task statistics
-        num_tasks = len(tasks)
-        successful_tasks = sum(1 for task in tasks if task.get("task_success", False))
-        task_success_rate = (successful_tasks / num_tasks * 100) if num_tasks > 0 else 0
+        # Extract workflow info
+        workflow_name = workflow_metrics.get("workflow_name", "Unknown")
+        workflow_success = workflow_metrics.get("workflow_success", False)
+        tasks = workflow_metrics.get("tasks", [])
+        total_tokens = workflow_metrics.get("total_tokens", 0)
+        total_duration = workflow_metrics.get("total_duration", 0)
+        total_cost = workflow_metrics.get("total_cost", 0.0)
         
-        # Get individual task scores (if available)
-        task_scores_summary = []
-        for i, task in enumerate(tasks):
-            task_name = task.get("task_goal", f"Task {i+1}")
-            if "comment_score" in task:
-                task_scores_summary.append(f"- {task_name}: {task['comment_score']}/10")
-            else:
-                # Evaluate task if not already evaluated
-                score, _ = self.evaluate_task(task)
-                task_scores_summary.append(f"- {task_name}: {score}/10")
-        
-        task_scores_str = "\n".join(task_scores_summary[:10])  # Limit to 10 tasks
-        if len(tasks) > 10:
-            task_scores_str += f"\n... and {len(tasks) - 10} more tasks"
+        # Format task scores
+        task_scores_summary = self._format_workflow_tasks(tasks, task_execution_summaries)
         
         # Create prompt
         prompt = self.workflow_prompt_template.format(
             workflow_name=workflow_name,
-            workflow_goal=workflow_goal,
             workflow_success=workflow_success,
-            num_tasks=num_tasks,
-            task_success_rate=task_success_rate,
-            task_scores_summary=task_scores_str
+            num_tasks=len(tasks),
+            task_scores_summary=task_scores_summary,
+            total_tokens=total_tokens,
+            total_duration=total_duration,
+            total_cost=total_cost
         )
         
         # Try OpenAI evaluation
@@ -409,17 +431,6 @@ Provide your evaluation in the following JSON format:
             score = float(result.get("score", 5.0))
             reasoning = result.get("reasoning", "No reasoning provided")
             
-            # Optionally create full EvaluationResult
-            if "strengths" in result:
-                evaluation_result = EvaluationResult(
-                    comment_score=int(score),
-                    reasoning=reasoning,
-                    strengths=result.get("strengths", []),
-                    weaknesses=result.get("weaknesses", []),
-                    suggestions=result.get("suggestions", [])
-                )
-                # Store in context for later use
-                context["evaluation_result"] = evaluation_result
             
             return score, reasoning
         else:

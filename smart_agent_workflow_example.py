@@ -1,14 +1,13 @@
 """
-Agent and Workflow Example - SimulationSDK
+Smart Agent and Workflow Example - SimulationSDK
 
-This example demonstrates the bottom-up agent development approach with workflow tracking.
-Follows the patterns from test_workflow_tracking.py
+This example demonstrates the smart agent workflow pattern. 
+Decorate agents (llm-based nodes in LangGraph) with @simulation_tool(category=ToolCategory.AGENT_TOOL) to automatically save their performance (if it did not exist) and use them as tools.
 """
 
 import os
 import time
 from simulation_sdk import (
-    simulation_agent,
     simulation_tool,
     ToolCategory,
     SimulationResponse,
@@ -81,7 +80,7 @@ def add_slide_content(presentation_id: str, slide_num: int, content: str):
 # No need for @simulation_agent anymore - just use AGENT_TOOL!
 @simulation_tool(
     category=ToolCategory.AGENT_TOOL,
-    agent_name="slide_creator",
+    agent_name="slide_creator_of_smart_agent_workflow_example",
     delay_ms=500
 )
 def slide_creator_agent(topic: str, num_slides: int = 5):
@@ -116,7 +115,7 @@ def slide_creator_agent(topic: str, num_slides: int = 5):
 
 @simulation_tool(
     category=ToolCategory.AGENT_TOOL,
-    agent_name="research_agent",
+    agent_name="research_agent_of_smart_agent_workflow_example",
     delay_ms=300
 )
 def research_agent(topic: str):
@@ -142,7 +141,7 @@ def research_agent(topic: str):
 # Step 3: Create higher-level agent that coordinates others
 @simulation_tool(
     category=ToolCategory.AGENT_TOOL,
-    agent_name="workshop_organizer",
+    agent_name="workshop_organizer_of_smart_agent_workflow_example",
     delay_ms=1000
 )
 def workshop_organizer_agent(workshop_topic: str, audience: str):
@@ -203,6 +202,9 @@ def run_complete_workflow():
     print(f"{'='*50}")
     
     try:
+        result = research_agent("Machine Learning")
+        print(f"\nFirst call result: {result['summary']}")
+        
         # Execute the main agent
         result = workshop_organizer_agent(
             workshop_topic="Introduction to Machine Learning",
@@ -210,7 +212,7 @@ def run_complete_workflow():
         )
         
         # End workflow successfully
-        workflow_metrics = context.end_workflow(success=True, comment_score=9.5)
+        workflow_metrics = context.end_workflow(success=True, comment_score=9)
         
         if workflow_metrics:
             print(f"\n{'='*50}")
@@ -236,7 +238,7 @@ def run_complete_workflow():
         
     except Exception as e:
         print(f"\nWorkflow failed: {e}")
-        context.end_workflow(success=False, comment_score=2.0)
+        context.end_workflow(success=False, comment_score=2)
         raise
 
 
@@ -272,7 +274,13 @@ if __name__ == "__main__":
     
     print("=== Agent and Workflow Example ===")
     
+    # Demonstrate smart agent tool pattern
+    demonstrate_smart_agent_tools()
+    
+    print("\n\nExample completed!")    
+    
     # Run the complete workflow
+    print("\n\nRunning complete workflow...")
     workflow_result = run_complete_workflow()
     
     print(f"\n\nFinal Workshop Plan:")
@@ -280,7 +288,3 @@ if __name__ == "__main__":
     print(f"Audience: {workflow_result['workshop_plan']['audience']}")
     print(f"Presentation: {workflow_result['workshop_plan']['presentation_url']}")
     
-    # Demonstrate smart agent tool pattern
-    demonstrate_smart_agent_tools()
-    
-    print("\n\nExample completed!")

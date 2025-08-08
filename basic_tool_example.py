@@ -7,12 +7,14 @@ Follows the patterns from test_refactored_sdk.py
 
 import os
 from simulation_sdk import (
+    merge_performance_files,
     simulation_tool, 
+    simulation_agent,
     ToolCategory, 
     SimulationResponse,
-    get_current_context,
     test_connectivity
 )
+from simulation_sdk.decorators import simulation_agent
 
 
 # Example 1: READ_ONLY tool (always executes)
@@ -66,6 +68,7 @@ def send_email(recipient: str, subject: str, body: str) -> dict:
 
 
 # Example 3: Simple agent for testing
+@simulation_agent(name="email_notification_agent_of_basic_tool_example", delay_ms=800)
 def email_notification_agent(user_email: str, search_query: str):
     """Example agent that searches and sends results via email"""
     print(f"\n=== Email Notification Agent ===")
@@ -108,6 +111,7 @@ def demonstrate_modes():
     
     result = email_notification_agent("user@example.com", "python")
     print(f"Agent result: {result}")
+    merge_performance_files()
     
     # Test in production mode
     print("\n2. PRODUCTION MODE (SIMULATION_MODE=false)")

@@ -22,7 +22,7 @@ class ToolMetrics(BaseModel):
     tool_name: str
     tokens: int
     duration: int  # milliseconds
-    comment_score: int = 10  # default 10, range 0-10
+    comment_score: float = 10.0  # default 10.0, range 0.0-10.0
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -36,7 +36,7 @@ class TaskMetrics(BaseModel):
     tool_calls: List[ToolMetrics]
     total_tokens: int  # llm_tokens + sum of tool tokens
     total_duration: int  # milliseconds
-    comment_score: int  # 0-10, from LLM evaluator
+    comment_score: float  # 0.0-10.0, from LLM evaluator
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -50,7 +50,7 @@ class WorkflowMetrics(BaseModel):
     total_tokens: int  # Sum of all task tokens
     total_duration: int  # milliseconds
     total_cost: float  # total_tokens * price_per_token
-    comment_score: int  # 0-10, from LLM evaluator
+    comment_score: float  # 0.0-10.0, from LLM evaluator
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -59,14 +59,13 @@ class AgentPerformance(BaseModel):
     """Performance metrics for an agent execution."""
     tokens: int
     duration: int  # milliseconds
-    comment_score: int
+    comment_score: float
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class AgentSimulatedResult(BaseModel):
     """Complete simulated result for an agent execution."""
-    task_goal: str
     tool_calls: List[Dict[str, Any]]  # Tool call history
     final_output: Any  # Must match real agent's response format
     

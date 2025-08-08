@@ -319,14 +319,6 @@ class SimulationValidator:
             # Check if output is an AgentSimulatedResult
             if isinstance(output, AgentSimulatedResult):
                 # Validate required fields
-                if not output.task_goal:
-                    validation_errors.append("Missing required field: task_goal")
-                    validation_passed = False
-                
-                if not isinstance(output.langraph_execution, dict):
-                    validation_errors.append("langraph_execution must be a dictionary")
-                    validation_passed = False
-                
                 if not isinstance(output.tool_calls, list):
                     validation_errors.append("tool_calls must be a list")
                     validation_passed = False

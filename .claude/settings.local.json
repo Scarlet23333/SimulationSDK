@@ -30,7 +30,10 @@
       "Bash(sqlite3:*)",
       "Bash(diff:*)",
       "Bash(grep:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "Bash(PYTHONPATH=/mnt/d/codes/Bili/SimulationSDK python examples/basic_tool_example.py)",
+      "Bash(PYTHONPATH=/mnt/d/codes/Bili/SimulationSDK python examples/token_tracking_example.py)",
+      "Bash(PYTHONPATH=. python examples/token_tracking_example.py)"
     ],
     "deny": []
   }

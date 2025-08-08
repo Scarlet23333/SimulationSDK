@@ -80,7 +80,7 @@ def call_llm(prompt: str) -> dict:
 # Example 3: Smart Agent Tool with automatic token tracking
 @simulation_tool(
     category=ToolCategory.AGENT_TOOL,
-    agent_name="research_agent",
+    agent_name="research_agent_of_token_tracking_example",
     delay_ms=1000
 )
 def research_agent(topic: str) -> dict:
@@ -109,7 +109,7 @@ def research_agent(topic: str) -> dict:
 # Example 4: Content Creator Agent
 @simulation_tool(
     category=ToolCategory.AGENT_TOOL,
-    agent_name="content_creator",
+    agent_name="content_creator_of_token_tracking_example",
     delay_ms=1500
 )
 def content_creator_agent(research: dict) -> dict:
@@ -153,12 +153,10 @@ def simulate_workflow_with_tracking():
         # Step 1: Research
         print("Step 1: Research Phase")
         research_result = research_agent("AI Safety")
-        print(f"Research result: {research_result}")
-
+        
         # Step 2: Content Creation
         print("\nStep 2: Content Creation Phase")
         content_result = content_creator_agent(research_result)
-        print(f"Content result: {content_result}")
         
         # End workflow
         metrics = context.end_workflow(success=True, comment_score=9)

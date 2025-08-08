@@ -128,7 +128,7 @@ class SimulationContext:
             self.workflow_tasks.append(task_metrics)
             logger.debug(f"Added task metrics to workflow: {task_metrics.task_name}")
             
-    def end_workflow(self, success: bool, comment_score: int = 10) -> Optional[WorkflowMetrics]:
+    def end_workflow(self, success: bool, comment_score: float = 10.0) -> Optional[WorkflowMetrics]:
         """
         End the current workflow and return WorkflowMetrics.
         

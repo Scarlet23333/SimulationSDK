@@ -135,8 +135,18 @@ class MockEvaluator(EvaluatorInterface):
         # Evaluate each task and aggregate
         task_scores = []
         for task in tasks:
-            task_score, _ = self.evaluate_task(task)
-            task_scores.append(task_score)
+            # Handle TaskMetrics objects or dicts
+            if hasattr(task, 'comment_score'):
+                # TaskMetrics object - use existing score
+                task_scores.append(task.comment_score)
+            elif isinstance(task, dict) and 'comment_score' in task:
+                # Dict with comment_score
+                task_scores.append(task['comment_score'])
+            else:
+                # Need to evaluate - create context for evaluation
+                task_context = task if isinstance(task, dict) else {"task_success": True}
+                task_score, _ = self.evaluate_task(task_context)
+                task_scores.append(task_score)
         
         # Calculate weighted average with some randomness
         avg_score = sum(task_scores) / len(task_scores)
@@ -358,7 +368,7 @@ Provide your evaluation in the following JSON format:
             return (10.0 if task_success else 0.0, "Non-agent tool")
         
         # Extract information from agent_summary
-        task_success = context.get("success", False)
+        task_success = context.get("task_success", False)
         
         if not task_success:
             return 0.0, "Task failed"

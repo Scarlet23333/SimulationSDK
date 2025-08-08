@@ -5,6 +5,7 @@ This module provides thread-local storage for the current simulation state
 and tracks metrics for the current agent/task execution.
 """
 
+import os
 import threading
 from typing import List, Optional
 from datetime import datetime
@@ -128,13 +129,13 @@ class SimulationContext:
             self.workflow_tasks.append(task_metrics)
             logger.debug(f"Added task metrics to workflow: {task_metrics.task_name}")
             
-    def end_workflow(self, success: bool, comment_score: float = 10.0) -> Optional[WorkflowMetrics]:
+    def end_workflow(self, success: bool, comment_score: Optional[float] = None) -> Optional[WorkflowMetrics]:
         """
         End the current workflow and return WorkflowMetrics.
         
         Args:
             success: Whether the workflow succeeded overall
-            comment_score: LLM evaluation score (0-10)
+            comment_score: LLM evaluation score (0-10), if None will evaluate automatically
             
         Returns:
             WorkflowMetrics for the completed workflow, or None if no workflow
@@ -149,6 +150,46 @@ class SimulationContext:
         
         # Simple cost calculation (example: $0.002 per 1K tokens)
         total_cost = (total_tokens / 1000) * 0.002
+        
+        # Evaluate workflow automatically if score not provided
+        if comment_score is None:
+            try:
+                # Import here to avoid circular import
+                from .evaluator import OpenAIEvaluator, MockEvaluator
+                
+                # Get or create evaluator
+                if os.environ.get("OPENAI_API_KEY"):
+                    try:
+                        evaluator = OpenAIEvaluator()
+                    except Exception:
+                        evaluator = MockEvaluator()
+                else:
+                    evaluator = MockEvaluator()
+                
+                # Prepare evaluation context - compatible with both evaluators
+                evaluation_context = {
+                    # Top-level fields for MockEvaluator compatibility
+                    "workflow_name": self.workflow_name,
+                    "workflow_success": success,
+                    "tasks": self.workflow_tasks,  # Pass TaskMetrics objects directly
+                    # Nested format for OpenAIEvaluator
+                    "workflow_metrics": {
+                        "workflow_name": self.workflow_name,
+                        "workflow_success": success,
+                        "tasks": [task.model_dump() for task in self.workflow_tasks],
+                        "total_tokens": total_tokens,
+                        "total_duration": duration_ms,
+                        "total_cost": total_cost
+                    },
+                    "task_execution_summaries": {}
+                }
+                
+                score, reasoning = evaluator.evaluate_workflow(evaluation_context)
+                logger.debug(f"Workflow '{self.workflow_name}' evaluated: score={score}, reason={reasoning}")
+                comment_score = score
+            except Exception as e:
+                logger.warning(f"Failed to evaluate workflow '{self.workflow_name}': {e}, using default score")
+                comment_score = 8.0 if success else 2.0
         
         workflow_metrics = WorkflowMetrics(
             workflow_id=self.workflow_id,

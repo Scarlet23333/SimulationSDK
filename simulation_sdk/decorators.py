@@ -29,6 +29,28 @@ from .models import (
 from .registry import ToolRegistry, ResponseTemplateManager
 from .context import SimulationContext, _thread_local
 from .performance import PerformanceManager
+from .evaluator import OpenAIEvaluator, MockEvaluator, EvaluatorInterface
+from .utils import logger
+
+# Global evaluator instance - created once at module level
+_evaluator: Optional[EvaluatorInterface] = None
+
+def _get_evaluator() -> EvaluatorInterface:
+    """Get or create the global evaluator instance."""
+    global _evaluator
+    if _evaluator is None:
+        # Check for OpenAI API key in environment
+        if os.environ.get("OPENAI_API_KEY"):
+            try:
+                _evaluator = OpenAIEvaluator()
+                logger.info("Using OpenAIEvaluator for automatic evaluation")
+            except Exception as e:
+                logger.warning(f"Failed to create OpenAIEvaluator: {e}, falling back to MockEvaluator")
+                _evaluator = MockEvaluator()
+        else:
+            _evaluator = MockEvaluator()
+            logger.info("Using MockEvaluator for automatic evaluation (set OPENAI_API_KEY for LLM evaluation)")
+    return _evaluator
 
 
 def track_llm_tokens(func: Callable) -> Callable:
@@ -468,13 +490,41 @@ def _record_agent_tool_as_task(
         ]
         total_tokens = agent_summary.performance.tokens
         llm_tokens = max(0, total_tokens - sum(tm.tokens for tm in tool_calls))
+        # Use existing score if available
+        existing_score = agent_summary.performance.comment_score
     else:
         # No summary available, use defaults
         tool_calls = []
         llm_tokens = 100 if success else 50
         total_tokens = llm_tokens
+        existing_score = None
     
-    # Create task metrics
+    # Evaluate task performance automatically if no existing score
+    if existing_score is not None:
+        score = existing_score
+    else:
+        try:
+            evaluator = _get_evaluator()
+            evaluation_context = {
+                "agent_name": agent_name,
+                "task_success": success,
+            }
+            if agent_summary:
+                evaluation_context["agent_summary"] = {
+                    "tool_calls": [tc.model_dump() if hasattr(tc, 'model_dump') else tc for tc in tool_calls],
+                    "final_output": result,
+                    "performance": {
+                        "tokens": total_tokens,
+                        "duration": duration_ms
+                    }
+                }
+            score, reasoning = evaluator.evaluate_task(evaluation_context)
+            logger.debug(f"Task '{agent_name}' evaluated: score={score}, reason={reasoning}")
+        except Exception as e:
+            logger.warning(f"Failed to evaluate task '{agent_name}': {e}, using default score")
+            score = 10.0 if success else 0.0
+    
+    # Create task metrics with evaluated score
     task_metrics = TaskMetrics(
         task_id=task_id,
         task_name=agent_name,
@@ -483,7 +533,7 @@ def _record_agent_tool_as_task(
         tool_calls=tool_calls,
         total_tokens=total_tokens,
         total_duration=duration_ms,
-        comment_score=10.0 if success else 0.0
+        comment_score=score
     )
     
     # Add task metrics to current workflow context
@@ -702,7 +752,35 @@ def _save_agent_performance(
         llm_tokens = 100 if success else 50  # Default estimate
     total_tokens = llm_tokens + tool_tokens
     
-    # Create task metrics
+    # Create simulated result for evaluation
+    simulated_result = AgentSimulatedResult(
+        tool_calls=[tm.model_dump() for tm in tool_metrics],
+        final_output=result,
+    )
+    
+    # Evaluate agent performance automatically
+    try:
+        evaluator = _get_evaluator()
+        evaluation_context = {
+            "agent_name": agent_name,
+            "task_success": success,
+            "agent_summary": {
+                "tool_calls": [tm.model_dump() for tm in tool_metrics],
+                "final_output": result,
+                "performance": {
+                    "tokens": total_tokens,
+                    "duration": duration_ms
+                }
+            }
+        }
+        score, reasoning = evaluator.evaluate_task(evaluation_context)
+        logger.debug(f"Agent '{agent_name}' evaluated: score={score}, reason={reasoning}")
+    except Exception as e:
+        logger.warning(f"Failed to evaluate agent '{agent_name}': {e}, using default score")
+        score = 10.0 if success else 0.0
+        reasoning = "Evaluation failed, using default score"
+    
+    # Create task metrics with evaluated score
     task_metrics = TaskMetrics(
         task_id=task_id,
         task_name=agent_name,
@@ -711,7 +789,7 @@ def _save_agent_performance(
         tool_calls=tool_metrics,
         total_tokens=total_tokens,
         total_duration=duration_ms,
-        comment_score=10.0 if success else 0.0
+        comment_score=score
     )
     
     # Save task metrics to history
@@ -727,17 +805,11 @@ def _save_agent_performance(
     if original_context and original_context.workflow_id:
         original_context.add_task_metrics(task_metrics)
     
-    # Create agent performance summary
+    # Create agent performance summary with evaluated score
     agent_performance = AgentPerformance(
         tokens=total_tokens,
         duration=duration_ms,
-        comment_score=10.0 if success else 0.0,
-    )
-    
-    # Create simulated result
-    simulated_result = AgentSimulatedResult(
-        tool_calls=[tm.model_dump() for tm in tool_metrics],
-        final_output=result,
+        comment_score=score,
     )
     
     # Create agent as tool summary

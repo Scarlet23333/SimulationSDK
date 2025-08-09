@@ -7,6 +7,7 @@ A Python framework for simulating tool calls and tracking agent performance in A
 The SDK uses decorators to make your functions "simulation-aware". Here's how it works:
 
 **1. Import the SDK and enable simulation mode:**
+
 ```python
 import os
 from simulation_sdk import simulation_tool, ToolCategory, SimulationResponse
@@ -16,6 +17,7 @@ os.environ["SIMULATION_MODE"] = "true"
 ```
 
 **2. Decorate your function to make it simulatable:**
+
 ```python
 @simulation_tool(
     category=ToolCategory.PRODUCTION_AFFECTING,  # This is a dangerous operation, we simulate the response
@@ -34,6 +36,7 @@ def send_email(to: str, subject: str) -> dict:
 ```
 
 **3. Call your function normally:**
+
 ```python
 result = send_email("test@example.com", "Hello")
 # In simulation mode: returns {"email_id": "sim_123", "status": "sent"}
@@ -147,13 +150,13 @@ def research_topic(topic: str) -> dict:
     """Research a topic and provide summary."""
     # Search for relevant documents
     docs = search_documents(f"query: {topic}")
-    
+
     # Extract information from top documents
     summaries = []
     for doc in docs[:2]:
         info = extract_info(doc["id"])
         summaries.append(info)
-    
+
     # Compile research results
     return {
         "topic": topic,
@@ -178,6 +181,8 @@ def call_openai(prompt: str):
     )
 ```
 
+When call the function inside a @simulation_tool with ToolCategory.AGENT_TOOL or @simulation_agent, the token usage will be recorded in the performance and save to simulation data automatically.
+
 ### Workflow Tracking
 
 Track complete workflows with metrics:
@@ -199,10 +204,12 @@ save_workflow_metrics(metrics)
 ## 📊 Automatic Evaluation
 
 The SDK automatically evaluates agent performance using:
+
 - **OpenAI GPT** (if OPENAI_API_KEY is set)
 - **MockEvaluator** (fallback option)
 
 Evaluation considers:
+
 1. **Correctness** - Did the agent achieve its goal?
 2. **Efficiency** - Minimal tool calls and reasonable duration?
 3. **Token Usage** - Appropriate token consumption?

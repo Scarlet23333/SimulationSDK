@@ -5,6 +5,8 @@ This package provides tools for building simulated conversational agents,
 managing dialogue flows, and evaluating simulation performance.
 """
 
+from typing import Optional
+
 __version__ = "0.1.0"
 __author__ = "SimulationSDK Team"
 
@@ -38,7 +40,7 @@ def merge_performance_files() -> None:
     manager.merge_temp_to_latest()
 
 
-def save_workflow_metrics(workflow_metrics, base_path: str = "simulation_data"):
+def save_workflow_metrics(workflow_metrics, base_path: Optional[str] = None):
     """
     Save workflow metrics to history storage.
     
@@ -46,7 +48,8 @@ def save_workflow_metrics(workflow_metrics, base_path: str = "simulation_data"):
     
     Args:
         workflow_metrics: WorkflowMetrics instance to save
-        base_path: Base directory for simulation data
+        base_path: Base directory for simulation data. 
+                  If None, uses SIMULATION_STORAGE_PATH env var or defaults to "simulation_data"
         
     Returns:
         Path to the saved file

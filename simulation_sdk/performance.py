@@ -25,13 +25,17 @@ class PerformanceManager:
     - Loading agent performance data for reuse
     """
     
-    def __init__(self, base_path: str = "simulation_data"):
+    def __init__(self, base_path: Optional[str] = None):
         """
         Initialize the PerformanceManager.
         
         Args:
-            base_path: Base directory for performance data storage
+            base_path: Base directory for performance data storage. 
+                      If None, uses SIMULATION_STORAGE_PATH env var or defaults to "simulation_data"
         """
+        import os
+        if base_path is None:
+            base_path = os.environ.get("SIMULATION_STORAGE_PATH", "simulation_data")
         self.base_path = Path(base_path)
         self.temp_dir = self.base_path / "temp_performance"
         self.latest_file = self.base_path / "latest_agent_performance.json"

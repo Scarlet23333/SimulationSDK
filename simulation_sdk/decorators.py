@@ -198,15 +198,7 @@ def simulation_tool(
             
             # Fast path for production mode - minimal overhead
             if not simulation_mode:
-                if category == ToolCategory.READ_ONLY:
-                    # Execute and return immediately
-                    return await func(*args, **kwargs)
-                elif category == ToolCategory.PRODUCTION_AFFECTING:
-                    # Execute real function in production
-                    return await func(*args, **kwargs)
-                elif category == ToolCategory.AGENT_TOOL:
-                    # Execute real function in production
-                    return await func(*args, **kwargs)
+                return await func(*args, **kwargs)
             
             # For read-only tools in simulation mode, always execute but record metrics
             if category == ToolCategory.READ_ONLY:
@@ -295,15 +287,7 @@ def simulation_tool(
             
             # Fast path for production mode - minimal overhead
             if not simulation_mode:
-                if category == ToolCategory.READ_ONLY:
-                    # Execute and return immediately
-                    return func(*args, **kwargs)
-                elif category == ToolCategory.PRODUCTION_AFFECTING:
-                    # Execute real function in production
-                    return func(*args, **kwargs)
-                elif category == ToolCategory.AGENT_TOOL:
-                    # Execute real function in production
-                    return func(*args, **kwargs)
+                return func(*args, **kwargs)
             
             # For read-only tools in simulation mode, always execute but record metrics
             if category == ToolCategory.READ_ONLY:
